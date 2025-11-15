@@ -136,7 +136,7 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
     }
 
     function viewMyPurchases() public view returns (uint256[] memory) {
-        return customers[msg.sender].purchases;
+        return customers[msg.sender].purchases; // View customer's purchases
     }
     
 }
