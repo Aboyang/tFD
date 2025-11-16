@@ -1,4 +1,4 @@
-# Tokenized FD NFT Smart Contract
+# Tokenized FD Smart Contract
 
 ## Overview
 
