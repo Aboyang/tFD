@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Tokenized FD** is an Ethereum-based smart contract that allows users to convert fixed deposit (FD) products into non-fungible tokens (NFTs). Each NFT represents a fixed deposit with specific details such as principal, interest rate, and duration. The contract is designed for transparency, portability, and interoperability with NFT wallets.
+Tokenized FD is an Ethereum smart contract that converts fixed deposits (FDs) into tFD NFTs. Each NFT represents a deposit with details like principal, interest rate, duration, and redemption status, offering transparency, portability, and compatibility with NFT wallets.
 
 The NFTs can be viewed, tracked, and redeemed through the smart contract. This project uses ERC721 standards with on-chain JSON metadata encoded in Base64 for each NFT.
 
