@@ -31,6 +31,7 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
         uint256 productID;
         address customer;
         uint256 startTime;
+        uint256 endTime;
         uint256 principal;
         bool redeemed;
     }
@@ -107,11 +108,14 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
 
         // Mint FD Token
         uint256 currentTime = block.timestamp;
+        uint256 maturityTime = currentTime + product.duration; // we will pretend that 1 second = 1 month
+        
         FDToken memory fdTokenMinted = FDToken({
             tokenID: numFDToken,
             productID: _productID,
             customer: msg.sender,
             startTime: currentTime,
+            endTime: maturityTime,
             principal: _principal,
             redeemed: false
         });
@@ -138,5 +142,39 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
     function viewMyPurchases() public view returns (uint256[] memory) {
         return customers[msg.sender].purchases; // View customer's purchases
     }
+
+    function redeemFDToken(uint256 _fdTokenID) public {
+
+        // Redeem requirement
+        FDToken storage fdToken = fdTokens[_fdTokenID];
+        require(fdToken.customer == msg.sender, "You are not the owner of this FDToken.");
+        require(!fdToken.redeemed, "FDToken has already been redeemed.");
+
+        uint256 currentTime = block.timestamp;
+
+        // Matured
+        if (currentTime >= fdToken.endTime) {
+            uint256 interest = (fdToken.principal * fdProducts[fdToken.productID].interestRate) / 10000;
+            uint256 amount = fdToken.principal + interest;
+
+            depositToken.transfer(msg.sender, amount);
+        
+        // Early redemption
+        } else {
+
+            // proportional interest
+            uint256 timeElapsed = currentTime - fdToken.startTime;
+            uint256 duration = fdToken.endTime - fdToken.startTime;
+            uint256 proportionalInterest = (fdToken.principal * fdProducts[fdToken.productID].interestRate * timeElapsed) / (duration * 10000);
+            // 20% penalty
+            uint256 amount = fdToken.principal + (proportionalInterest * 80 / 100); 
+
+            depositToken.transfer(msg.sender, amount);
+        }
+
+        fdToken.redeemed = true;
+    }
+
+
     
 }
