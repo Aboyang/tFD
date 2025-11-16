@@ -3,6 +3,8 @@ pragma solidity ^0.8.13;
 
 // Import libraries
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.9.3/contracts/token/ERC721/ERC721.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.9.3/contracts/utils/Strings.sol";
+import "openzeppelin/contracts/utils/Base64.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.9.3/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.9.3/contracts/access/Ownable.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.9.3/contracts/token/ERC20/ERC20.sol";
@@ -36,7 +38,7 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
         bool redeemed;
     }
 
-    mapping(uint256 => FDToken) public fdTokens;
+    mapping(uint256 => FDToken) private fdTokens;
 
     // List of customers
     struct Customer {
@@ -45,12 +47,13 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
         uint256[] purchases; // list of tokenID
     }
 
-    mapping(address => Customer) public customers;
-    mapping(address => bool) public existingCustomers;
+    mapping(address => Customer) private customers;
+    mapping(address => bool) private existingCustomers;
 
     // Events
     event FDProductCreated(uint256 indexed productID, string productName, uint256 interestRate, uint256 duration, uint256 minDepositAmt, uint maxDepositAmt);
     event FDTokenMinted(uint256 indexed tokenID, uint256 indexed productID, address indexed customer, uint256 startTime, uint256 principal, bool redeemed);
+    event FDTokenBurnt(uint256 indexed tokenID, uint256 amount);
 
     constructor(address _depositToken) ERC721("Tokenized FD", "tFD") {
         require(_depositToken != address(0), "Deposit token cannot be zero address");
@@ -92,6 +95,11 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
         return depositToken.balanceOf(address(this));
     }
 
+    function viewCustomer(address _customerAddress) public view onlyOwner returns (Customer memory) {
+        // View customer data
+        return customers[_customerAddress];
+    }  
+
     // Customer functions
     uint256 numCustomer;
     function purchaseFDProduct(uint256 _productID, uint256 _principal) public {
@@ -121,6 +129,10 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
         });
 
         fdTokens[numFDToken] = fdTokenMinted;
+        _mint(msg.sender, numFDToken);
+
+        string memory uri = generateTokenURI(fdTokenMinted);
+        _setTokenURI(numFDToken, uri);
 
         // Update customer and their purchases
         if (!existingCustomers[msg.sender]) {
@@ -139,8 +151,8 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
         numFDToken ++;
     }
 
-    function viewMyPurchases() public view returns (uint256[] memory) {
-        return customers[msg.sender].purchases; // View customer's purchases
+    function myPurchasesHistory() public view returns (uint256[] memory) {
+        return customers[msg.sender].purchases; // View customer's list of purchases
     }
 
     function redeemFDToken(uint256 _fdTokenID) public {
@@ -151,30 +163,69 @@ contract TokenizedFD is ERC721URIStorage, Ownable {
         require(!fdToken.redeemed, "FDToken has already been redeemed.");
 
         uint256 currentTime = block.timestamp;
+        uint256 amount;
 
         // Matured
         if (currentTime >= fdToken.endTime) {
             uint256 interest = (fdToken.principal * fdProducts[fdToken.productID].interestRate) / 10000;
-            uint256 amount = fdToken.principal + interest;
+            amount = fdToken.principal + interest;
 
             depositToken.transfer(msg.sender, amount);
         
         // Early redemption
         } else {
 
-            // proportional interest
+            // Proportional interest
             uint256 timeElapsed = currentTime - fdToken.startTime;
             uint256 duration = fdToken.endTime - fdToken.startTime;
             uint256 proportionalInterest = (fdToken.principal * fdProducts[fdToken.productID].interestRate * timeElapsed) / (duration * 10000);
             // 20% penalty
-            uint256 amount = fdToken.principal + (proportionalInterest * 80 / 100); 
+            amount = fdToken.principal + (proportionalInterest * 80 / 100); 
 
             depositToken.transfer(msg.sender, amount);
         }
 
         fdToken.redeemed = true;
+
+        // Burn the FD token
+        _burn(_fdTokenID);
+        emit FDTokenBurnt(_fdTokenID, amount);
     }
 
+    // Burn FD token
+    function _burn(uint256 tokenId) internal override(ERC721URIStorage) {
+        super._burn(tokenId); // Override _burn to combine ERC721 and ERC721URIStorage behavior
+    }
 
-    
+    // Generate FD Token URI in base64 encoding
+    function generateTokenURI(FDToken memory fdToken) private view returns (string memory) {
+        FDProduct memory product = fdProducts[fdToken.productID];
+
+        // JSON metadata
+        string memory json = string(
+            abi.encodePacked(
+                '{',
+                    '"name": "Tokenized FD #', Strings.toString(fdToken.tokenID), '",',
+                    '"description": "Fixed Deposit NFT representing a principal of ', Strings.toString(fdToken.principal), ' deposited in ', product.productName, '",',
+                    '"attributes": [',
+                        '{"trait_type": "Principal", "value": ', Strings.toString(fdToken.principal), '},',
+                        '{"trait_type": "Interest Rate (bps)", "value": ', Strings.toString(product.interestRate), '},',
+                        '{"trait_type": "Start Time", "value": ', Strings.toString(fdToken.startTime), '},',
+                        '{"trait_type": "End Time", "value": ', Strings.toString(fdToken.endTime), '},',
+                    ']',
+                '}'
+            )
+        );
+
+        // Encode JSON to base64
+        string memory encodedJson = Base64.encode(bytes(json));
+
+        // Return data URI
+        return string(abi.encodePacked("data:application/json;base64,", encodedJson));
+    }
+
+    // View FD token's URI
+    function tokenURI(uint256 tokenId) public view override(ERC721URIStorage) returns (string memory) {
+        return super.tokenURI(tokenId); // Override tokenURI to use ERC721URIStorage's logic
+    }
 }
